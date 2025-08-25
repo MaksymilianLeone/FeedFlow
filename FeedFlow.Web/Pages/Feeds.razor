@@ -1,0 +1,104 @@
+﻿@page "/feeds"
+@using FeedFlow.Domain
+@using FeedFlow.Web.Data
+@using FeedFlow.Infrastructure.Import
+@using FeedFlow.Infrastructure.Feeds
+@inject AppDbContext Db
+@inject GoogleMerchantFeedBuilder FeedBuilder
+
+<h3>FeedFlow — Google Merchant (MVP)</h3>
+
+@if (!string.IsNullOrEmpty(Info))
+{
+    <div class="alert alert-success">@Info</div>
+}
+@if (!string.IsNullOrEmpty(Error))
+{
+    <div class="alert alert-danger">@Error</div>
+}
+
+<div class="card p-3 mb-3">
+    <h5>1) Upload Products CSV</h5>
+    <InputFile OnChange="OnFileChange" />
+    <small class="text-muted">Headers: sku,title,description,price,saleprice,currency,stock,url,imageurl,brand,gtin</small>
+</div>
+
+<div class="card p-3 mb-3">
+    <h5>2) Build Google Merchant Feed</h5>
+    <button class="btn btn-primary" @onclick="BuildNow">Build Now</button>
+    @if (!string.IsNullOrEmpty(FeedUrl))
+    {
+        <div class="mt-2"><b>Feed URL:</b> <a href="@FeedUrl" target="_blank">@FeedUrl</a></div>
+    }
+</div>
+
+@code {
+    private string? Info;
+    private string? Error;
+    private string? FeedUrl;
+
+    private async Task<Guid> EnsureOrgAsync()
+    {
+        var org = Db.Orgs.FirstOrDefault();
+        if (org is null)
+        {
+            org = new Org { Name = "Demo Store" };
+            Db.Orgs.Add(org);
+            await Db.SaveChangesAsync();
+        }
+        return org.Id;
+    }
+
+    private async Task OnFileChange(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            await using var stream = file.OpenReadStream(20 * 1024 * 1024);
+            var rows = await CsvProductImporter.ParseAsync(stream);
+            var orgId = await EnsureOrgAsync();
+
+            var errors = new List<string>();
+            foreach (var r in rows)
+            {
+                var errs = CsvProductImporter.Validate(r).ToList();
+                if (errs.Any()) { errors.Add($"{r.Sku ?? "(no sku)"}: {string.Join("; ", errs)}"); continue; }
+
+                var entity = CsvProductImporter.MapToEntity(orgId, r);
+                var existing = Db.Products.FirstOrDefault(p => p.OrgId == orgId && p.Sku == entity.Sku);
+                if (existing is null) Db.Products.Add(entity);
+                else
+                {
+                    existing.Title = entity.Title;
+                    existing.Description = entity.Description;
+                    existing.Price = entity.Price;
+                    existing.SalePrice = entity.SalePrice;
+                    existing.Currency = entity.Currency;
+                    existing.Stock = entity.Stock;
+                    existing.Url = entity.Url;
+                    existing.ImageUrl = entity.ImageUrl;
+                    existing.Brand = entity.Brand;
+                    existing.Gtin = entity.Gtin;
+                    existing.IsActive = true;
+                }
+            }
+            await Db.SaveChangesAsync();
+
+            Info = $"Imported {rows.Count - errors.Count} products." + (errors.Any() ? $" {errors.Count} with issues." : "");
+            Error = errors.Any() ? string.Join("\n", errors.Take(5)) + (errors.Count > 5 ? " ..." : "") : null;
+        }
+        catch (Exception ex) { Error = ex.Message; }
+    }
+
+    private async Task BuildNow()
+    {
+        try
+        {
+            var org = Db.Orgs.First();
+            var prods = Db.Products.Where(p => p.OrgId == org.Id).ToList();
+            FeedUrl = await FeedBuilder.BuildAsync(org, prods, org.Name);
+            Info = "Feed built successfully.";
+        }
+        catch (Exception ex) { Error = ex.Message; }
+    }
+}

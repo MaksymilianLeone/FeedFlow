@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">
+  <channel>
+    <title>Demo Store</title>
+    <item>
+      <g:id>SKU-002</g:id>
+      <title>Green Bead Necklace</title>
+      <description>Handmade necklace</description>
+      <link>https://example.com/p/sku-002</link>
+      <g:price>29.50 USD</g:price>
+      <g:availability>in stock</g:availability>
+      <g:brand>LeoneBijou</g:brand>
+      <g:image_link>https://example.com/img/sku-002.jpg</g:image_link>
+      <g:condition>new</g:condition>
+    </item>
+    <item>
+      <g:id>SKU-001</g:id>
+      <title>Blue Bead Bracelet</title>
+      <description>Lovely blue bead bracelet</description>
+      <link>https://example.com/p/sku-001</link>
+      <g:price>19.99 USD</g:price>
+      <g:sale_price>14.99 USD</g:sale_price>
+      <g:availability>in stock</g:availability>
+      <g:brand>LeoneBijou</g:brand>
+      <g:gtin>1234567890123</g:gtin>
+      <g:image_link>https://example.com/img/sku-001.jpg</g:image_link>
+      <g:condition>new</g:condition>
+    </item>
+  </channel>
+</rss>
