@@ -42,5 +42,8 @@ namespace FeedFlow.Domain
         public string ImageUrl { get; set; } = default!;
 
         public bool IsActive { get; set; } = true;
+
+        [MaxLength(80)] 
+        public string? Mpn { get; set; }
     }
 }

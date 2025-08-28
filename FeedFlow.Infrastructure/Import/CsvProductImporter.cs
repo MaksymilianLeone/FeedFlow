@@ -25,6 +25,7 @@ namespace FeedFlow.Infrastructure.Import
             public string ImageUrl { get; set; } = default!;
             public string? Brand { get; set; }
             public string? Gtin { get; set; }
+            public string? Mpn { get; set; }
         }
         public static async Task<List<CsvProductRow>> ParseAsync(Stream csv)
         {
@@ -61,7 +62,8 @@ namespace FeedFlow.Infrastructure.Import
             Url = r.Url.Trim(),
             ImageUrl = r.ImageUrl.Trim(),
             Brand = r.Brand?.Trim(),
-            Gtin = r.Gtin?.Trim()
+            Gtin = r.Gtin?.Trim(),
+            Mpn = r.Mpn?.Trim()
         };
     }
 }

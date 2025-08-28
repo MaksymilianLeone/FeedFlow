@@ -1,4 +1,5 @@
-﻿@page "/feeds"
+﻿@attribute [Authorize]
+@page "/feeds"
 @using FeedFlow.Domain
 @using FeedFlow.Web.Data
 @using FeedFlow.Infrastructure.Import
@@ -20,7 +21,9 @@
 <div class="card p-3 mb-3">
     <h5>1) Upload Products CSV</h5>
     <InputFile OnChange="OnFileChange" />
-    <small class="text-muted">Headers: sku,title,description,price,saleprice,currency,stock,url,imageurl,brand,gtin</small>
+    <small class="text-muted">
+        Headers: sku,title,description,price,saleprice,currency,stock,url,imageurl,brand,gtin,mpn
+    </small>
 </div>
 
 <div class="card p-3 mb-3">

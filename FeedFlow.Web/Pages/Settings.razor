@@ -1,0 +1,44 @@
+﻿@page "/settings"
+@attribute [Authorize]
+@using FeedFlow.Domain
+@using FeedFlow.Domain.Entities
+@inject FeedFlow.Web.Data.AppDbContext Db
+
+<h3>Store Settings</h3>
+
+<EditForm Model="_model" OnValidSubmit="Save">
+    <DataAnnotationsValidator /><ValidationSummary />
+    <div class="mb-2">
+        <label>Store name</label>
+        <InputText class="form-control" @bind-Value="_model.StoreName" />
+    </div>
+    <div class="mb-2">
+        <label>Default currency</label>
+        <InputText class="form-control" @bind-Value="_model.DefaultCurrency" />
+    </div>
+    <fieldset class="border p-2">
+        <legend>UTM (optional)</legend>
+        <div class="mb-2"><label>utm_source</label><InputText class="form-control" @bind-Value="_model.UtmSource" /></div>
+        <div class="mb-2"><label>utm_medium</label><InputText class="form-control" @bind-Value="_model.UtmMedium" /></div>
+        <div class="mb-2"><label>utm_campaign</label><InputText class="form-control" @bind-Value="_model.UtmCampaign" /></div>
+    </fieldset>
+    <button class="btn btn-primary mt-2">Save</button>
+</EditForm>
+
+@code {
+    private StoreSettings _model = new();
+
+    protected override void OnInitialized()
+    {
+        var org = Db.Orgs.First();
+        _model = Db.StoreSettings.FirstOrDefault(s => s.OrgId == org.Id)
+                 ?? new StoreSettings { OrgId = org.Id, StoreName = org.Name };
+    }
+
+    private async Task Save()
+    {
+        if (Db.StoreSettings.Any(s => s.Id == _model.Id)) Db.StoreSettings.Update(_model);
+        else Db.StoreSettings.Add(_model);
+        await Db.SaveChangesAsync();
+    }
+}

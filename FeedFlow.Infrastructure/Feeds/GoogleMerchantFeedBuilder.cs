@@ -27,8 +27,12 @@ namespace FeedFlow.Infrastructure.Feeds
                                 new XElement(g + "price", $"{p.Price:F2} {p.Currency}"),
                                 p.SalePrice.HasValue ? new XElement(g + "sale_price", $"{p.SalePrice:F2} {p.Currency}") : null,
                                 new XElement(g + "availability", p.Stock > 0 ? "in stock" : "out of stock"),
-                                !string.IsNullOrWhiteSpace(p.Brand) ? new XElement(g + "brand", p.Brand) : null,
-                                !string.IsNullOrWhiteSpace(p.Gtin) ? new XElement(g + "gtin", p.Gtin) : null,
+                               !string.IsNullOrWhiteSpace(p.Brand) ? new XElement(g + "brand", p.Brand) : null,
+                               !string.IsNullOrWhiteSpace(p.Gtin) ? new XElement(g + "gtin", p.Gtin) : null,
+                               !string.IsNullOrWhiteSpace(p.Mpn) ? new XElement(g + "mpn", p.Mpn) : null,
+                               (string.IsNullOrWhiteSpace(p.Gtin) && string.IsNullOrWhiteSpace(p.Mpn))
+                                   ? new XElement(g + "identifier_exists", "false")
+                                   : null,
                                 new XElement(g + "image_link", p.ImageUrl),
                                 new XElement(g + "condition", "new")
                             )
