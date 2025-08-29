@@ -1,13 +1,15 @@
+using FeedFlow.Infrastructure.Feeds;
+using FeedFlow.Infrastructure.Storage;
 using FeedFlow.Web.Data;
 using FeedFlow.Web.Identity;
-using FeedFlow.Infrastructure.Storage;
-using FeedFlow.Infrastructure.Feeds;
+using FeedFlow.Web.Jobs;
+using Hangfire;
+using Hangfire.MemoryStorage; 
+using Hangfire.SqlServer;     
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
-using Hangfire;
-using Hangfire.SqlServer;     
-using Hangfire.MemoryStorage; 
 using System.Linq;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -41,6 +43,8 @@ builder.Services.AddDefaultIdentity<ApplicationUser>(o => o.SignIn.RequireConfir
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
 
+builder.Services.AddScoped<AuthenticationStateProvider, RevalidatingIdentityAuthenticationStateProvider<ApplicationUser>>();
+
 if (builder.Environment.IsDevelopment())
 {
     builder.Services.AddHangfire(cfg => cfg.UseMemoryStorage());
@@ -64,13 +68,10 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error");
     app.UseHsts();
 }
-app.UseHangfireDashboard("/hangfire", new DashboardOptions
-{
-    Authorization = new[] { new HangfireDashboardAuth() }
-});
+
+
 
 app.UseHttpsRedirection();
-
 app.UseStaticFiles();
 app.UseStaticFiles(new StaticFileOptions
 {
@@ -79,14 +80,15 @@ app.UseStaticFiles(new StaticFileOptions
 });
 
 app.UseRouting();
-app.UseAuthentication();
+app.UseAuthentication();  
 app.UseAuthorization();
 
+app.UseHangfireDashboard("/hangfire", new DashboardOptions
+{
+    Authorization = new[] { new HangfireDashboardAuth() }
+});
 app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");
-
-app.UseHangfireDashboard();
-
 static async Task<bool> EnsureDbAndSeedAsync(WebApplication app)
 {
     try
@@ -141,5 +143,6 @@ if (dbReady)
             Cron.Daily(3)); 
     }
 }
-
+BackgroundJob.Enqueue(() =>
+    Console.WriteLine($"[HF TEST] Hangfire test job ran at {DateTimeOffset.UtcNow:u}"));
 app.Run();

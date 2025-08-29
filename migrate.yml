@@ -1,0 +1,23 @@
+name: Migrate Database
+
+on:
+  workflow_dispatch: {}  
+
+jobs:
+  migrate:
+    runs-on: windows-latest
+    env:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Default: ${{ secrets.SQL_CONN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - name: Install EF Tool
+        run: dotnet tool install --global dotnet-ef
+      - name: Add tool path
+        shell: bash
+        run: echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
+      - name: Run migrations
+        run: dotnet ef database update --project FeedFlow.Web --startup-project FeedFlow.Web

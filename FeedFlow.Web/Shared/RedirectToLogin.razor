@@ -1,0 +1,14 @@
+﻿@inject NavigationManager Nav
+
+@code {
+    // Redirect AFTER the circuit connects so prerender doesn't swallow it
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        var rel = Nav.ToBaseRelativePath(Nav.Uri);
+        var returnUrl = "/" + rel;
+        var encoded = System.Uri.EscapeDataString(returnUrl);
+        Nav.NavigateTo($"/Identity/Account/Login?returnUrl={encoded}", forceLoad: true);
+    }
+}

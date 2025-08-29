@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using static FeedFlow.Infrastructure.Import.CsvProductImporter;
 
 namespace FeedFlow.Infrastructure.Import
 {
@@ -30,12 +31,22 @@ namespace FeedFlow.Infrastructure.Import
         public static async Task<List<CsvProductRow>> ParseAsync(Stream csv)
         {
             using var reader = new StreamReader(csv);
-            using var cr = new CsvReader(reader, new CsvConfiguration(CultureInfo.InvariantCulture)
+            var config = new CsvConfiguration(CultureInfo.InvariantCulture)
             {
-                PrepareHeaderForMatch = args => (args.Header ?? string.Empty).Trim().ToLowerInvariant()
-            });
+                PrepareHeaderForMatch = args => (args.Header ?? string.Empty).Trim().ToLowerInvariant(),
+                HeaderValidated = null,   
+                MissingFieldFound = null, 
+                TrimOptions = TrimOptions.Trim
+            };
+            using var cr = new CsvReader(reader, config);
+
+            // Optional: explicit map with mpn marked optional (keeps behavior strict but tolerant)
+            cr.Context.RegisterClassMap<CsvProductRowMap>();
+
             var list = new List<CsvProductRow>();
-            await foreach (var r in cr.GetRecordsAsync<CsvProductRow>()) list.Add(r);
+            await foreach (var r in cr.GetRecordsAsync<CsvProductRow>())
+                list.Add(r);
+
             return list;
         }
 
@@ -65,5 +76,23 @@ namespace FeedFlow.Infrastructure.Import
             Gtin = r.Gtin?.Trim(),
             Mpn = r.Mpn?.Trim()
         };
+    }
+    public sealed class CsvProductRowMap : ClassMap<CsvProductRow>
+    {
+        public CsvProductRowMap()
+        {
+            Map(m => m.Sku).Name("sku");
+            Map(m => m.Title).Name("title");
+            Map(m => m.Description).Name("description");
+            Map(m => m.Price).Name("price");
+            Map(m => m.SalePrice).Name("saleprice");
+            Map(m => m.Currency).Name("currency");
+            Map(m => m.Stock).Name("stock");
+            Map(m => m.Url).Name("url");
+            Map(m => m.ImageUrl).Name("imageurl");
+            Map(m => m.Brand).Name("brand");
+            Map(m => m.Gtin).Name("gtin");
+            Map(m => m.Mpn).Name("mpn").Optional();
+        }
     }
 }

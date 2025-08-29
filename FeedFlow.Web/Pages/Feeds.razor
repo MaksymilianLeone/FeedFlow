@@ -1,13 +1,33 @@
-﻿@attribute [Authorize]
-@page "/feeds"
-@using FeedFlow.Domain
+﻿@using FeedFlow.Domain
 @using FeedFlow.Web.Data
 @using FeedFlow.Infrastructure.Import
 @using FeedFlow.Infrastructure.Feeds
+@using FeedFlow.Web.Jobs
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Hangfire
+@inject IBackgroundJobClient Jobs
+
+@attribute [Authorize]
+@page "/feeds"
 @inject AppDbContext Db
 @inject GoogleMerchantFeedBuilder FeedBuilder
 
 <h3>FeedFlow — Google Merchant (MVP)</h3>
+
+
+<AuthorizeView>
+    <Authorized>
+        <p>You are logged in as: @context.User.Identity.Name</p>
+        <form method="post" action="/Identity/Account/Logout" class="d-inline">
+            <input name="ReturnUrl" type="hidden" value="/" />
+            <button type="submit" class="btn btn-outline-secondary btn-sm">Logout</button>
+        </form>
+    </Authorized>
+    <NotAuthorized>
+        <p>You are NOT logged in!</p>
+    </NotAuthorized>
+</AuthorizeView>
 
 @if (!string.IsNullOrEmpty(Info))
 {
@@ -34,11 +54,81 @@
         <div class="mt-2"><b>Feed URL:</b> <a href="@FeedUrl" target="_blank">@FeedUrl</a></div>
     }
 </div>
+<div class="card p-3 mb-3">
+    <h5>3) Status</h5>
+    @if (GoogleFeed is null)
+    {
+        <p class="text-muted">No feed created yet.</p>
+    }
+    else
+    {
+        <div><b>Last build:</b> @(GoogleFeed.LastBuiltAt?.LocalDateTime.ToString("g") ?? "—")</div>
+        @if (!string.IsNullOrWhiteSpace(GoogleFeed.PublicUrl))
+        {
+            <div><b>Public URL:</b> <a href="@GoogleFeed.PublicUrl" target="_blank">@GoogleFeed.PublicUrl</a></div>
+        }
+    }
+    <button class="btn btn-sm btn-outline-secondary mt-2" @onclick="LoadStatus">Refresh</button>
 
+    <hr />
+    <h6>Recent runs</h6>
+    @if (RecentRuns.Count == 0)
+    {
+        <p class="text-muted">No runs yet.</p>
+    }
+    else
+    {
+        <table class="table table-sm">
+            <thead>
+                <tr>
+                    <th>Started</th>
+                    <th>Ended</th>
+                    <th>Status</th>
+                    <th>Errors</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in RecentRuns)
+                {
+                    <tr>
+                        <td>@r.StartedAt.LocalDateTime.ToString("g")</td>
+                        <td>@(r.EndedAt?.LocalDateTime.ToString("g") ?? "—")</td>
+                        <td>@r.Status</td>
+                        <td>@(string.IsNullOrWhiteSpace(r.ErrorsJson) ? "—" : r.ErrorsJson)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <button class="btn btn-outline-secondary btn-sm ms-2" @onclick="TriggerScheduled">Trigger scheduled</button>
+    }
+
+</div>
 @code {
     private string? Info;
     private string? Error;
     private string? FeedUrl;
+    private Feed? GoogleFeed;
+    private List<BuildRun> RecentRuns = new();
+
+
+    protected override void OnInitialized()
+    {
+        LoadStatus();
+    }
+
+    private void LoadStatus()
+    {
+        var org = Db.Orgs.FirstOrDefault();
+        if (org is null) return;
+
+        GoogleFeed = Db.Feeds.FirstOrDefault(f => f.OrgId == org.Id && f.Channel == "google-merchant");
+
+        RecentRuns = Db.BuildRuns
+            .Where(r => r.Feed.OrgId == org.Id && r.Feed.Channel == "google-merchant")
+            .OrderByDescending(r => r.StartedAt)
+            .Take(10)
+            .ToList();
+    }
 
     private async Task<Guid> EnsureOrgAsync()
     {
@@ -50,6 +140,12 @@
             await Db.SaveChangesAsync();
         }
         return org.Id;
+    }
+    private void TriggerScheduled()
+    {
+        var orgId = Db.Orgs.Select(o => o.Id).First();
+        RecurringJob.Trigger($"org-{orgId}-google");
+        Info = "Triggered the scheduled job.";
     }
 
     private async Task OnFileChange(InputFileChangeEventArgs e)
@@ -93,15 +189,17 @@
         catch (Exception ex) { Error = ex.Message; }
     }
 
-    private async Task BuildNow()
+    private Task BuildNow()
     {
         try
         {
-            var org = Db.Orgs.First();
-            var prods = Db.Products.Where(p => p.OrgId == org.Id).ToList();
-            FeedUrl = await FeedBuilder.BuildAsync(org, prods, org.Name);
-            Info = "Feed built successfully.";
+            var orgId = Db.Orgs.Select(o => o.Id).First();
+            Jobs.Enqueue<FeedJob>(j => j.BuildGoogleFeed(orgId));  
+            Info = "Build queued. Check status below or in /hangfire.";
+            Error = null;
+            LoadStatus();
         }
         catch (Exception ex) { Error = ex.Message; }
+        return Task.CompletedTask;
     }
 }

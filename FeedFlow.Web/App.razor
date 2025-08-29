@@ -1,20 +1,13 @@
-﻿@using FeedFlow.Web.Pages.Shared
+﻿@using Microsoft.AspNetCore.Components.Authorization
+@using FeedFlow.Web.Pages
+@using FeedFlow.Web.Shared
+
 <CascadingAuthenticationState>
     <Router AppAssembly="@typeof(App).Assembly">
         <Found Context="routeData">
             <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
-                <!-- Use a unique Context name to avoid clashes -->
-                <NotAuthorized Context="notAuthData">
-                    <AuthorizeView>
-                        <!-- Signed-in but lacks permission -->
-                        <Authorized>
-                            <p class="text-danger">You are not authorized to view this page.</p>
-                        </Authorized>
-                        <!-- Not signed in: redirect to Identity login -->
-                        <NotAuthorized>
-                            <RedirectToLogin />
-                        </NotAuthorized>
-                    </AuthorizeView>
+                <NotAuthorized Context="authContext">
+                    <RedirectToLogin />
                 </NotAuthorized>
                 <Authorizing>
                     <p>Authorizing...</p>
@@ -23,7 +16,7 @@
         </Found>
         <NotFound>
             <LayoutView Layout="@typeof(MainLayout)">
-                <p>Sorry, there’s nothing at this address.</p>
+                <p>Sorry, there's nothing at this address.</p>
             </LayoutView>
         </NotFound>
     </Router>

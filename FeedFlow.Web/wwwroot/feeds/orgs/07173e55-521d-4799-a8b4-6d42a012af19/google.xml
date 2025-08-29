@@ -10,6 +10,7 @@
       <g:price>29.50 USD</g:price>
       <g:availability>in stock</g:availability>
       <g:brand>LeoneBijou</g:brand>
+      <g:identifier_exists>false</g:identifier_exists>
       <g:image_link>https://example.com/img/sku-002.jpg</g:image_link>
       <g:condition>new</g:condition>
     </item>

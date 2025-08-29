@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
-namespace FeedFlow.Web.Pages.Shared
+namespace FeedFlow.Web.Shared
 {
     public class _LoginPartialModel : PageModel
     {

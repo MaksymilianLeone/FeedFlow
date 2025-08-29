@@ -1,0 +1,19 @@
+﻿@using System.Security.Claims
+@using Microsoft.AspNetCore.Identity
+@using FeedFlow.Web.Identity
+@inject NavigationManager Nav
+
+<AuthorizeView>
+    <Authorized Context="ctx">
+        <div class="d-flex align-items-center gap-2">
+            <span class="text-muted">
+                Hello, @(ctx.User.FindFirst(ClaimTypes.Email)?.Value ?? ctx.User.Identity?.Name ?? "user")
+            </span>
+            <a class="btn btn-outline-secondary btn-sm" href="/logout">Logout</a>
+            @* Alternatively: @onclick="@(() => Nav.NavigateTo("/logout", forceLoad: true))" *@
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <a class="btn btn-link btn-sm" href="/Identity/Account/Login">Login</a>
+    </NotAuthorized>
+</AuthorizeView>
