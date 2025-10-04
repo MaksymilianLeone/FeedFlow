@@ -5,6 +5,7 @@
 @using FeedFlow.Web.Jobs
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
 @using Hangfire
 @using Microsoft.EntityFrameworkCore
 @inject IBackgroundJobClient Jobs
@@ -41,7 +42,7 @@
     <h5>1) Upload Products CSV</h5>
     <InputFile OnChange="OnFileChange" />
     <small class="text-muted">
-        Headers: sku,title,description,price,saleprice,currency,stock,url,imageurl,brand,gtin,mpn
+        Headers: sku,title,description,price,saleprice,currency,stock/availability,url(or product_url/link),imageurl(or image_url/image_link),brand,gtin,mpn
     </small>
 </div>
 
