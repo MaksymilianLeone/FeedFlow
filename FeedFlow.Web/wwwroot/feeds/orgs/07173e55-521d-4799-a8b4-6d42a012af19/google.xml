@@ -15,6 +15,19 @@
       <g:condition>new</g:condition>
     </item>
     <item>
+      <g:id>SKU-003</g:id>
+      <title>Testuje Maks</title>
+      <description>Testuje MaksTestuje MaksTestuje MaksTestuje MaksTestuje Maks</description>
+      <link>https://leonebijou.net/www.product.com</link>
+      <g:price>15.00 USD</g:price>
+      <g:sale_price>12.99 USD</g:sale_price>
+      <g:availability>out of stock</g:availability>
+      <g:brand>LeoneBijou</g:brand>
+      <g:identifier_exists>false</g:identifier_exists>
+      <g:image_link>www.product.com</g:image_link>
+      <g:condition>new</g:condition>
+    </item>
+    <item>
       <g:id>SKU-001</g:id>
       <title>Blue Bead Bracelet</title>
       <description>Lovely blue bead bracelet</description>

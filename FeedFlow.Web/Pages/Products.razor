@@ -1,0 +1,341 @@
+﻿@page "/products"
+@attribute [Authorize]
+
+@using FeedFlow.Web.Data
+@using FeedFlow.Domain
+@using FeedFlow.Domain.Entities
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Forms
+@using Hangfire
+@using FeedFlow.Web.Jobs
+
+@inject AppDbContext Db
+@inject IBackgroundJobClient Jobs
+
+<h3>Products</h3>
+
+@if (!string.IsNullOrEmpty(Error))
+{
+    <div class="alert alert-danger">@Error</div>
+}
+@if (!string.IsNullOrEmpty(Info))
+{
+    <div class="alert alert-success">@Info</div>
+}
+
+<div class="d-flex align-items-center gap-2 mb-3">
+    <input class="form-control" style="max-width:320px" placeholder="Search by SKU or title..." @bind="q" @bind:event="oninput" />
+    <button class="btn btn-outline-secondary" @onclick="Search">Search</button>
+    <button class="btn btn-primary ms-auto" @onclick="NewProduct">Add Product</button>
+</div>
+
+@if (Items is null)
+{
+    <p class="text-muted">Loading…</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-sm">
+            <thead>
+                <tr>
+                    <th>SKU</th>
+                    <th>Title</th>
+                    <th>Price</th>
+                    <th>Curr</th>
+                    <th>Stock</th>
+                    <th>Brand</th>
+                    <th>GTIN</th>
+                    <th>MPN</th>
+                    <th>Active</th>
+                    <th style="width:140px"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var p in Items)
+                {
+                    <tr>
+                        <td>@p.Sku</td>
+                        <td>@p.Title</td>
+                        <td>@p.Price:F2</td>
+                        <td>@p.Currency</td>
+                        <td>@p.Stock</td>
+                        <td>@p.Brand</td>
+                        <td>@p.Gtin</td>
+                        <td>@p.Mpn</td>
+                        <td>@(p.IsActive ? "Yes" : "No")</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => Edit(p)">Edit</button>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => Delete(p.Id)">Delete</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="d-flex align-items-center gap-2">
+        <button class="btn btn-outline-secondary btn-sm" disabled="@(pageIndex <= 1)" @onclick="PrevPage">Prev</button>
+        <span>Page @pageIndex of @Math.Max(1, (int)Math.Ceiling(total / (double)pageSize))</span>
+        <button class="btn btn-outline-secondary btn-sm" disabled="@((pageIndex * pageSize) >= total)" @onclick="NextPage">Next</button>
+        <span class="ms-auto text-muted">@total total</span>
+    </div>
+}
+
+@if (ShowEditor)
+{
+    <div class="position-fixed top-0 start-0 w-100 h-100" style="background:rgba(0,0,0,.35); z-index:1050;" @onclick="CloseEditor">
+        <div class="card shadow position-absolute p-3" style="width:780px; max-width:90vw; top:10%; left:50%; transform:translateX(-50%);" @onclick:stopPropagation>
+            <h5 class="mb-3">@((IsNew ? "Add" : "Edit")) Product</h5>
+            @if (!string.IsNullOrEmpty(FormError))
+            {
+                <div class="alert alert-danger">@FormError</div>
+            }
+            <EditForm Model="@Editor" OnValidSubmit="@Save">
+                <DataAnnotationsValidator />
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">SKU</label>
+                        <InputText class="form-control" @bind-Value="Editor.Sku" />
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">Title</label>
+                        <InputText class="form-control" @bind-Value="Editor.Title" />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Description</label>
+                        <InputTextArea class="form-control" rows="3" @bind-Value="Editor.Description" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Price</label>
+                        <InputNumber class="form-control" @bind-Value="Editor.Price" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Sale Price</label>
+                        <InputNumber class="form-control" @bind-Value="Editor.SalePrice" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Currency</label>
+                        <InputText class="form-control" @bind-Value="Editor.Currency" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Stock</label>
+                        <InputNumber class="form-control" @bind-Value="Editor.Stock" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Active</label>
+                        <InputCheckbox class="form-check-input ms-2" @bind-Value="Editor.IsActive" />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Product URL</label>
+                        <InputText class="form-control" @bind-Value="Editor.Url" />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Image URL</label>
+                        <InputText class="form-control" @bind-Value="Editor.ImageUrl" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Brand</label>
+                        <InputText class="form-control" @bind-Value="Editor.Brand" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">GTIN</label>
+                        <InputText class="form-control" @bind-Value="Editor.Gtin" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">MPN</label>
+                        <InputText class="form-control" @bind-Value="Editor.Mpn" />
+                    </div>
+                </div>
+                <div class="mt-3 d-flex gap-2">
+                    <button class="btn btn-primary" type="submit" disabled="@Saving">Save</button>
+                    <button class="btn btn-outline-secondary" type="button" @onclick="CloseEditor" disabled="@Saving">Cancel</button>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Product>? Items;
+    private int total;
+    private int pageIndex = 1;
+    private int pageSize = 20;
+    private string? q;
+    private string? Info;
+    private string? Error;
+
+    private bool ShowEditor;
+    private bool IsNew;
+    private bool Saving;
+    private Product Editor = new();
+    private Guid OrgId;
+    private string? FormError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        OrgId = await EnsureOrgAsync();
+        await LoadAsync();
+    }
+
+    private async Task<Guid> EnsureOrgAsync()
+    {
+        var org = await Db.Orgs.FirstOrDefaultAsync();
+        if (org is null)
+        {
+            org = new Org { Name = "Demo Store" };
+            Db.Orgs.Add(org);
+            await Db.SaveChangesAsync();
+        }
+        return org.Id;
+    }
+
+    private async Task LoadAsync()
+    {
+        IQueryable<Product> qy = Db.Products.Where(p => p.OrgId == OrgId);
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var s = q.Trim();
+            qy = qy.Where(p => p.Sku.Contains(s) || p.Title.Contains(s));
+        }
+        total = await qy.CountAsync();
+        Items = await qy
+            .OrderBy(p => p.Sku)
+            .Skip((pageIndex - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+        StateHasChanged();
+    }
+
+    private async Task Search()
+    {
+        pageIndex = 1;
+        await LoadAsync();
+    }
+
+    private async Task PrevPage()
+    {
+        if (pageIndex > 1) { pageIndex--; await LoadAsync(); }
+    }
+
+    private async Task NextPage()
+    {
+        if ((pageIndex * pageSize) < total) { pageIndex++; await LoadAsync(); }
+    }
+
+    private void NewProduct()
+    {
+        IsNew = true;
+        Editor = new Product
+        {
+            OrgId = OrgId,
+            Currency = "USD",
+            IsActive = true,
+            Stock = 0,
+            Price = 0
+        };
+        FormError = null;
+        ShowEditor = true;
+    }
+
+    private void Edit(Product p)
+    {
+        IsNew = false;
+        Editor = new Product
+        {
+            Id = p.Id,
+            OrgId = p.OrgId,
+            Sku = p.Sku,
+            Title = p.Title,
+            Description = p.Description,
+            Price = p.Price,
+            SalePrice = p.SalePrice,
+            Currency = p.Currency,
+            Stock = p.Stock,
+            Url = p.Url,
+            ImageUrl = p.ImageUrl,
+            Brand = p.Brand,
+            Gtin = p.Gtin,
+            Mpn = p.Mpn,
+            IsActive = p.IsActive
+        };
+        FormError = null;
+        ShowEditor = true;
+    }
+
+    private async Task Save()
+    {
+        Saving = true;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(Editor.Sku)) throw new InvalidOperationException("SKU is required.");
+            if (string.IsNullOrWhiteSpace(Editor.Title)) throw new InvalidOperationException("Title is required.");
+            if (Editor.Price <= 0) throw new InvalidOperationException("Price must be greater than 0.");
+            if (string.IsNullOrWhiteSpace(Editor.Currency) || Editor.Currency.Length != 3) throw new InvalidOperationException("Currency must be 3 letters.");
+            if (string.IsNullOrWhiteSpace(Editor.Url)) throw new InvalidOperationException("Product URL is required.");
+            if (string.IsNullOrWhiteSpace(Editor.ImageUrl)) throw new InvalidOperationException("Image URL is required.");
+
+            if (IsNew)
+            {
+                var dupe = await Db.Products.AnyAsync(p => p.OrgId == OrgId && p.Sku == Editor.Sku);
+                if (dupe) throw new InvalidOperationException("A product with this SKU already exists.");
+                Db.Products.Add(Editor);
+            }
+            else
+            {
+                var existing = await Db.Products.FirstAsync(p => p.Id == Editor.Id && p.OrgId == OrgId);
+                existing.Sku = Editor.Sku;
+                existing.Title = Editor.Title;
+                existing.Description = Editor.Description;
+                existing.Price = Editor.Price;
+                existing.SalePrice = Editor.SalePrice;
+                existing.Currency = Editor.Currency.ToUpperInvariant();
+                existing.Stock = Editor.Stock;
+                existing.Url = Editor.Url;
+                existing.ImageUrl = Editor.ImageUrl;
+                existing.Brand = Editor.Brand;
+                existing.Gtin = Editor.Gtin;
+                existing.Mpn = Editor.Mpn;
+                existing.IsActive = Editor.IsActive;
+            }
+
+            await Db.SaveChangesAsync();
+            Info = "Saved.";
+            ShowEditor = false;
+            await LoadAsync();
+            Jobs.Enqueue<FeedJob>(j => j.BuildGoogleFeed(OrgId));
+        }
+        catch (Exception ex)
+        {
+            FormError = ex.Message;
+        }
+        finally
+        {
+            Saving = false;
+        }
+    }
+
+    private async Task Delete(Guid id)
+    {
+        try
+        {
+            var p = await Db.Products.FirstOrDefaultAsync(x => x.Id == id && x.OrgId == OrgId);
+            if (p is null) return;
+            Db.Products.Remove(p);
+            await Db.SaveChangesAsync();
+            Info = "Deleted.";
+            await LoadAsync();
+            Jobs.Enqueue<FeedJob>(j => j.BuildGoogleFeed(OrgId));
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+        }
+    }
+
+    private void CloseEditor()
+    {
+        ShowEditor = false;
+        FormError = null;
+    }
+}

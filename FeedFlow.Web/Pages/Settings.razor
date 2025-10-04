@@ -1,44 +1,123 @@
 ﻿@page "/settings"
 @attribute [Authorize]
+
+@using FeedFlow.Web.Data
 @using FeedFlow.Domain
-@using FeedFlow.Domain.Entities
-@inject FeedFlow.Web.Data.AppDbContext Db
+@using FeedFlow.Domain.Entities     
+@using Microsoft.EntityFrameworkCore 
+@using Microsoft.AspNetCore.Components.Forms
+@using Hangfire
+@using FeedFlow.Web.Jobs
+
+@inject AppDbContext Db
+@inject IBackgroundJobClient Jobs
 
 <h3>Store Settings</h3>
 
-<EditForm Model="_model" OnValidSubmit="Save">
-    <DataAnnotationsValidator /><ValidationSummary />
-    <div class="mb-2">
-        <label>Store name</label>
-        <InputText class="form-control" @bind-Value="_model.StoreName" />
-    </div>
-    <div class="mb-2">
-        <label>Default currency</label>
-        <InputText class="form-control" @bind-Value="_model.DefaultCurrency" />
-    </div>
-    <fieldset class="border p-2">
-        <legend>UTM (optional)</legend>
-        <div class="mb-2"><label>utm_source</label><InputText class="form-control" @bind-Value="_model.UtmSource" /></div>
-        <div class="mb-2"><label>utm_medium</label><InputText class="form-control" @bind-Value="_model.UtmMedium" /></div>
-        <div class="mb-2"><label>utm_campaign</label><InputText class="form-control" @bind-Value="_model.UtmCampaign" /></div>
-    </fieldset>
-    <button class="btn btn-primary mt-2">Save</button>
-</EditForm>
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+@if (_info is not null)
+{
+    <div class="alert alert-success">@_info</div>
+}
+
+@if (_settings is null)
+{
+    <p class="text-muted">Loading…</p>
+}
+else
+{
+    <EditForm Model="@_settings" OnValidSubmit="@HandleValidSubmit">
+        <DataAnnotationsValidator />
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Store name</label>
+                <InputText class="form-control" @bind-Value="_settings.StoreName" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Default currency (ISO 4217)</label>
+                <InputText class="form-control" @bind-Value="_settings.DefaultCurrency" />
+            </div>
+            <div class="col-md-12">
+                <label class="form-label">Base URL (optional, e.g. https://example.com)</label>
+                <InputText class="form-control" @bind-Value="_settings.BaseUrl" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">UTM Source</label>
+                <InputText class="form-control" @bind-Value="_settings.UtmSource" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">UTM Medium</label>
+                <InputText class="form-control" @bind-Value="_settings.UtmMedium" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">UTM Campaign</label>
+                <InputText class="form-control" @bind-Value="_settings.UtmCampaign" />
+            </div>
+        </div>
+
+        <div class="mt-3 d-flex gap-2">
+            <button class="btn btn-primary" type="submit">Save</button>
+            <button class="btn btn-outline-secondary" type="button" @onclick="ReloadAsync">Reset</button>
+        </div>
+    </EditForm>
+}
 
 @code {
-    private StoreSettings _model = new();
+    private StoreSettings? _settings;  
+    private Guid _orgId;
+    private string? _info, _error;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
     {
-        var org = Db.Orgs.First();
-        _model = Db.StoreSettings.FirstOrDefault(s => s.OrgId == org.Id)
-                 ?? new StoreSettings { OrgId = org.Id, StoreName = org.Name };
+        _info = _error = null;
+
+        var org = await Db.Orgs.FirstOrDefaultAsync();
+        if (org is null)
+        {
+            org = new Org { Name = "Demo Store" };
+            Db.Orgs.Add(org);
+            await Db.SaveChangesAsync();
+        }
+        _orgId = org.Id;
+
+        _settings = await Db.StoreSettings.SingleOrDefaultAsync(s => s.OrgId == _orgId)
+                 ?? new StoreSettings { OrgId = _orgId, StoreName = org.Name, DefaultCurrency = "USD" };
+
+        StateHasChanged();
     }
 
-    private async Task Save()
+    private async Task HandleValidSubmit(EditContext _)
     {
-        if (Db.StoreSettings.Any(s => s.Id == _model.Id)) Db.StoreSettings.Update(_model);
-        else Db.StoreSettings.Add(_model);
-        await Db.SaveChangesAsync();
+        await SaveAsync();
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            var existing = await Db.StoreSettings.AsTracking().SingleOrDefaultAsync(s => s.OrgId == _orgId);
+            if (existing is null)
+            {
+                Db.StoreSettings.Add(_settings!);
+            }
+            else
+            {
+                Db.Entry(existing).CurrentValues.SetValues(_settings!);
+            }
+
+            await Db.SaveChangesAsync();
+
+            _info = "Settings saved.";
+            Jobs.Enqueue<FeedJob>(j => j.BuildGoogleFeed(_orgId)); 
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
     }
 }

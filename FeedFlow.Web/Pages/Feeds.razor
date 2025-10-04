@@ -6,15 +6,14 @@
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using Hangfire
+@using Microsoft.EntityFrameworkCore
 @inject IBackgroundJobClient Jobs
 
 @attribute [Authorize]
 @page "/feeds"
 @inject AppDbContext Db
-@inject GoogleMerchantFeedBuilder FeedBuilder
 
 <h3>FeedFlow — Google Merchant (MVP)</h3>
-
 
 <AuthorizeView>
     <Authorized>
@@ -48,12 +47,13 @@
 
 <div class="card p-3 mb-3">
     <h5>2) Build Google Merchant Feed</h5>
-    <button class="btn btn-primary" @onclick="BuildNow">Build Now</button>
+    <button class="btn btn-primary" @onclick="BuildNow" disabled="@IsQueuing">Build Now</button>
     @if (!string.IsNullOrEmpty(FeedUrl))
     {
         <div class="mt-2"><b>Feed URL:</b> <a href="@FeedUrl" target="_blank">@FeedUrl</a></div>
     }
 </div>
+
 <div class="card p-3 mb-3">
     <h5>3) Status</h5>
     @if (GoogleFeed is null)
@@ -62,7 +62,7 @@
     }
     else
     {
-        <div><b>Last build:</b> @(GoogleFeed.LastBuiltAt?.LocalDateTime.ToString("g") ?? "—")</div>
+        <div><b>Last build:</b> @(GoogleFeed?.LastBuiltAt?.LocalDateTime.ToString("g") ?? "—") · <b>Included:</b> @IncludedCount</div>
         @if (!string.IsNullOrWhiteSpace(GoogleFeed.PublicUrl))
         {
             <div><b>Public URL:</b> <a href="@GoogleFeed.PublicUrl" target="_blank">@GoogleFeed.PublicUrl</a></div>
@@ -101,33 +101,41 @@
         </table>
         <button class="btn btn-outline-secondary btn-sm ms-2" @onclick="TriggerScheduled">Trigger scheduled</button>
     }
-
 </div>
+
 @code {
     private string? Info;
     private string? Error;
     private string? FeedUrl;
     private Feed? GoogleFeed;
     private List<BuildRun> RecentRuns = new();
+    private bool IsQueuing;
+    private int IncludedCount;
 
-
-    protected override void OnInitialized()
-    {
-        LoadStatus();
-    }
+    protected override void OnInitialized() => LoadStatus();
 
     private void LoadStatus()
     {
-        var org = Db.Orgs.FirstOrDefault();
+        var org = Db.Orgs.AsNoTracking().FirstOrDefault();
         if (org is null) return;
 
-        GoogleFeed = Db.Feeds.FirstOrDefault(f => f.OrgId == org.Id && f.Channel == "google-merchant");
+        GoogleFeed = Db.Feeds.AsNoTracking().FirstOrDefault(f => f.OrgId == org.Id && f.Channel == "google-merchant");
 
-        RecentRuns = Db.BuildRuns
-            .Where(r => r.Feed.OrgId == org.Id && r.Feed.Channel == "google-merchant")
-            .OrderByDescending(r => r.StartedAt)
-            .Take(10)
-            .ToList();
+        if (GoogleFeed is not null)
+        {
+            RecentRuns = Db.BuildRuns.AsNoTracking()
+                .Where(r => r.FeedId == GoogleFeed.Id)
+                .ToList()
+                .OrderByDescending(r => r.StartedAt)
+                .Take(10)
+                .ToList();
+        }
+        else
+        {
+            RecentRuns = new();
+        }
+
+        IncludedCount = Db.Products.AsNoTracking().Count(p => p.OrgId == org.Id && p.IsActive);
     }
 
     private async Task<Guid> EnsureOrgAsync()
@@ -141,6 +149,7 @@
         }
         return org.Id;
     }
+
     private void TriggerScheduled()
     {
         var orgId = Db.Orgs.Select(o => o.Id).First();
@@ -158,6 +167,8 @@
             var orgId = await EnsureOrgAsync();
 
             var errors = new List<string>();
+            var upserts = 0;
+
             foreach (var r in rows)
             {
                 var errs = CsvProductImporter.Validate(r).ToList();
@@ -165,7 +176,11 @@
 
                 var entity = CsvProductImporter.MapToEntity(orgId, r);
                 var existing = Db.Products.FirstOrDefault(p => p.OrgId == orgId && p.Sku == entity.Sku);
-                if (existing is null) Db.Products.Add(entity);
+                if (existing is null)
+                {
+                    Db.Products.Add(entity);
+                    upserts++;
+                }
                 else
                 {
                     existing.Title = entity.Title;
@@ -178,28 +193,45 @@
                     existing.ImageUrl = entity.ImageUrl;
                     existing.Brand = entity.Brand;
                     existing.Gtin = entity.Gtin;
+                    existing.Mpn = entity.Mpn;
                     existing.IsActive = true;
+                    upserts++;
                 }
             }
+
             await Db.SaveChangesAsync();
 
-            Info = $"Imported {rows.Count - errors.Count} products." + (errors.Any() ? $" {errors.Count} with issues." : "");
+            Info = $"Imported/updated {upserts} products." + (errors.Any() ? $" {errors.Count} with issues." : "");
             Error = errors.Any() ? string.Join("\n", errors.Take(5)) + (errors.Count > 5 ? " ..." : "") : null;
+
+            if (upserts > 0)
+            {
+                Jobs.Enqueue<FeedJob>(j => j.BuildGoogleFeed(orgId));
+                Info += " Build queued.";
+            }
+
+            LoadStatus();
         }
         catch (Exception ex) { Error = ex.Message; }
     }
 
-    private Task BuildNow()
+    private async Task BuildNow()
     {
+        if (IsQueuing) return;
+        IsQueuing = true;
         try
         {
             var orgId = Db.Orgs.Select(o => o.Id).First();
-            Jobs.Enqueue<FeedJob>(j => j.BuildGoogleFeed(orgId));  
-            Info = "Build queued. Check status below or in /hangfire.";
+            Jobs.Enqueue<FeedJob>(j => j.BuildGoogleFeed(orgId));
+            Info = "Build queued.";
             Error = null;
             LoadStatus();
         }
         catch (Exception ex) { Error = ex.Message; }
-        return Task.CompletedTask;
+        finally
+        {
+            await Task.Delay(1200);
+            IsQueuing = false;
+        }
     }
 }

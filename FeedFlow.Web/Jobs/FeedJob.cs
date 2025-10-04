@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using FeedFlow.Domain;
 using FeedFlow.Infrastructure.Feeds;
 using FeedFlow.Web.Data;
+using Hangfire;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -23,60 +24,48 @@ namespace FeedFlow.Web.Jobs
             _log = log;
         }
 
-        public Task BuildGoogleFeed(Guid orgId) => BuildGoogleFeed(orgId, CancellationToken.None);
+        [DisableConcurrentExecution(timeoutInSeconds: 1800)]
+        public Task BuildGoogleFeed(Guid orgId) => BuildGoogleFeed_Internal(orgId, null, CancellationToken.None);
 
-        public async Task BuildGoogleFeed(Guid orgId, CancellationToken ct)
+        [DisableConcurrentExecution(timeoutInSeconds: 1800)]
+        public Task BuildGoogleFeed(Guid orgId, Guid runId) => BuildGoogleFeed_Internal(orgId, runId, CancellationToken.None);
+
+        public Task BuildGoogleFeed(Guid orgId, CancellationToken ct) => BuildGoogleFeed_Internal(orgId, null, ct);
+
+        private async Task BuildGoogleFeed_Internal(Guid orgId, Guid? existingRunId, CancellationToken ct)
         {
-            // Load org + products
             var org = await _db.Orgs.FirstAsync(o => o.Id == orgId, ct);
-            var products = await _db.Products
-                .Where(p => p.OrgId == orgId && p.IsActive)
-                .ToListAsync(ct);
-
-            // Optional settings (for UTM, store name)
+            var products = await _db.Products.Where(p => p.OrgId == orgId && p.IsActive).ToListAsync(ct);
             var settings = await _db.StoreSettings.FirstOrDefaultAsync(s => s.OrgId == orgId, ct);
             var storeName = settings?.StoreName ?? org.Name;
 
-            // Ensure feed row exists
-            var feed = await _db.Feeds
-                .FirstOrDefaultAsync(f => f.OrgId == orgId && f.Channel == "google-merchant", ct);
+            var feed = await _db.Feeds.FirstOrDefaultAsync(f => f.OrgId == orgId && f.Channel == "google-merchant", ct)
+                       ?? _db.Feeds.Add(new Feed { OrgId = orgId, Channel = "google-merchant", Name = "Google Merchant" }).Entity;
+            await _db.SaveChangesAsync(ct);
 
-            if (feed is null)
+            BuildRun run;
+            if (existingRunId.HasValue)
             {
-                feed = new Feed
-                {
-                    OrgId = orgId,
-                    Channel = "google-merchant",
-                    Name = "Google Merchant"
-                };
-                _db.Feeds.Add(feed);
-                await _db.SaveChangesAsync(ct);
+                run = await _db.BuildRuns.FirstAsync(r => r.Id == existingRunId.Value, ct);
+                run.Status = "Running";
             }
-
-            // Log run start
-            var run = new BuildRun
+            else
             {
-                FeedId = feed.Id,
-                Status = "Running",
-                StartedAt = DateTimeOffset.UtcNow
-            };
-            _db.BuildRuns.Add(run);
+                run = new BuildRun { FeedId = feed.Id, Status = "Running", StartedAt = DateTimeOffset.UtcNow };
+                _db.BuildRuns.Add(run);
+            }
             await _db.SaveChangesAsync(ct);
 
             try
             {
-                // Build the file (with optional UTM)
                 var url = await _builder.BuildAsync(
-                    org, products, storeName,
-                    settings?.UtmSource, settings?.UtmMedium, settings?.UtmCampaign, ct);
-
-                // Update feed & run
+                          org, products, storeName,
+                          settings?.UtmSource, settings?.UtmMedium, settings?.UtmCampaign,
+                          settings?.BaseUrl, ct);
                 feed.PublicUrl = url;
                 feed.LastBuiltAt = DateTimeOffset.UtcNow;
-
                 run.Status = "Succeeded";
                 run.EndedAt = DateTimeOffset.UtcNow;
-
                 await _db.SaveChangesAsync(ct);
                 _log.LogInformation("Built Google feed for Org {OrgId}: {Url}", orgId, url);
             }
@@ -85,7 +74,6 @@ namespace FeedFlow.Web.Jobs
                 run.Status = "Failed";
                 run.EndedAt = DateTimeOffset.UtcNow;
                 run.ErrorsJson = ex.ToString();
-
                 await _db.SaveChangesAsync(ct);
                 _log.LogError(ex, "Failed building Google feed for Org {OrgId}", orgId);
                 throw;
