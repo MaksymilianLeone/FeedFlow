@@ -1,4 +1,6 @@
 ﻿using Hangfire.Dashboard;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Identity;
 
 namespace FeedFlow.Web.Identity
 {
@@ -7,7 +9,11 @@ namespace FeedFlow.Web.Identity
         public bool Authorize(DashboardContext context)
         {
             var http = context.GetHttpContext();
-            return http.User?.Identity?.IsAuthenticated == true;
+
+            var result = http.AuthenticateAsync(IdentityConstants.ApplicationScheme)
+                             .GetAwaiter().GetResult();
+
+            return result.Succeeded && http.User?.Identity?.IsAuthenticated == true;
         }
     }
 }

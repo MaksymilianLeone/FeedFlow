@@ -10,6 +10,7 @@ using Hangfire;
 using Hangfire.MemoryStorage;
 using Hangfire.SqlServer;
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
@@ -69,6 +70,14 @@ else
 
 builder.Services.AddDefaultIdentity<ApplicationUser>(o => o.SignIn.RequireConfirmedAccount = false)
     .AddEntityFrameworkStores<AppDbContext>();
+
+builder.Services.ConfigureApplicationCookie(o =>
+{
+    o.LoginPath = "/Identity/Account/Login";
+    o.AccessDeniedPath = "/Identity/Account/AccessDenied";
+    o.Cookie.SameSite = SameSiteMode.Lax;
+    o.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+});
 
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
