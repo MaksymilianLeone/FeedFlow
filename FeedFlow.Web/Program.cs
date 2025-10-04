@@ -1,6 +1,3 @@
-using System;
-using System.IO;
-using System.Linq;
 using FeedFlow.Infrastructure.Feeds;
 using FeedFlow.Infrastructure.Storage;
 using FeedFlow.Web.Data;
@@ -10,7 +7,6 @@ using Hangfire;
 using Hangfire.MemoryStorage;
 using Hangfire.SqlServer;
 using Microsoft.AspNetCore.Components.Authorization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
@@ -60,15 +56,29 @@ if (useSqlite)
 
     Console.WriteLine($"[DB] SQLite: {sqliteConn}");
     builder.Services.AddDbContext<AppDbContext>(opt => opt.UseSqlite(sqliteConn));
+
     builder.Services.AddHangfire(cfg => cfg.UseMemoryStorage());
 }
 else
 {
-    builder.Services.AddDbContext<AppDbContext>(opt => opt.UseSqlServer(builder.Configuration.GetConnectionString("Default")));
-    builder.Services.AddHangfire(cfg => cfg.UseSqlServerStorage(builder.Configuration.GetConnectionString("Default")));
+    var sqlConn = builder.Configuration.GetConnectionString("Default");
+    Console.WriteLine($"[DB] SQL Server (conn name 'Default').");
+
+    builder.Services.AddDbContext<AppDbContext>(opt => opt.UseSqlServer(sqlConn));
+
+    builder.Services.AddHangfire(cfg => cfg
+        .UseSimpleAssemblyNameTypeSerializer()
+        .UseRecommendedSerializerSettings()
+        .UseSqlServerStorage(sqlConn, new SqlServerStorageOptions
+        {
+            SchemaName = "HangFire",
+            PrepareSchemaIfNecessary = true,
+            QueuePollInterval = TimeSpan.Zero
+        }));
 }
 
-builder.Services.AddDefaultIdentity<ApplicationUser>(o => o.SignIn.RequireConfirmedAccount = false)
+builder.Services
+    .AddDefaultIdentity<ApplicationUser>(o => o.SignIn.RequireConfirmedAccount = false)
     .AddEntityFrameworkStores<AppDbContext>();
 
 builder.Services.ConfigureApplicationCookie(o =>
@@ -167,7 +177,7 @@ static async Task<bool> EnsureDbAndSeedAsync(WebApplication app, bool usingSqlit
     }
     catch (Exception ex)
     {
-        Console.WriteLine("[DB] EnsureDbAndSeed failed: " + ex.Message);
+        Console.WriteLine("[DB] EnsureDbAndSeed failed: " + ex);
         return false;
     }
 }
@@ -179,13 +189,16 @@ if (dbReady)
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
     foreach (var orgId in db.Orgs.Select(o => o.Id).ToList())
     {
         RecurringJob.AddOrUpdate<FeedJob>(
             $"org-{orgId}-google",
             j => j.BuildGoogleFeed(orgId),
-            Cron.Daily(3));
+            Cron.Daily(3)); // 03:00 UTC
     }
 }
 
 app.Run();
+
+public partial class Program { }
